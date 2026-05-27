@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 
 from aaim_terminal.config import PAIRS, SCRAPER_TIMEOUT_MS
 from aaim_terminal.scrapers.demo_data import generate_synthetic_bars
+from aaim_terminal.scrapers.http_utils import INVESTING_HEADERS, async_client
 from aaim_terminal.storage.cache import store
 
 logger = logging.getLogger(__name__)
@@ -23,14 +24,8 @@ async def httpx_scrape_investing(symbol: str) -> pd.DataFrame:
     slug = pair.investing_slug
     url = f"https://www.investing.com/currencies/{slug}-historical-data"
 
-    timeout = httpx.Timeout(SCRAPER_TIMEOUT_MS / 1000 + 5, connect=SCRAPER_TIMEOUT_MS / 1000)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "X-Requested-With": "XMLHttpRequest",
-    }
-
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        resp = await client.get(url, headers=headers)
+    async with async_client(timeout=SCRAPER_TIMEOUT_MS / 1000 + 5) as client:
+        resp = await client.get(url, headers=INVESTING_HEADERS)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         table = soup.find("table", id="curr_table")
