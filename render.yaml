@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: aaim-indicator-terminal
+    runtime: python
+    rootDir: aaim_terminal
+    buildCommand: pip install -r requirements.txt
+    startCommand: bash start.sh
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
