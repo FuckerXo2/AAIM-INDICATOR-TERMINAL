@@ -4,7 +4,9 @@ interface PairSelectorProps {
   pairs: PairInfo[]
   scrapers: ScraperStatus[]
   selected: string
+  open: boolean
   onSelect: (symbol: string) => void
+  onClose: () => void
 }
 
 function scraperTone(status: string) {
@@ -13,14 +15,19 @@ function scraperTone(status: string) {
   return 'bad'
 }
 
-export function PairSelector({ pairs, scrapers, selected, onSelect }: PairSelectorProps) {
+export function PairSelector({ pairs, scrapers, selected, open, onSelect, onClose }: PairSelectorProps) {
   const statusMap = Object.fromEntries(scrapers.map((s) => [s.symbol, s]))
 
   return (
-    <aside className="panel pair-selector">
-      <div className="panel-head">
+    <aside className={`panel pair-selector ${open ? 'open' : ''}`} aria-label="Pair universe">
+      <div className="panel-head pair-nav-head">
         <h2>Pair Universe</h2>
-        <span className="panel-tag">{pairs.length} pairs</span>
+        <div className="pair-nav-head-actions">
+          <span className="panel-tag">{pairs.length} pairs</span>
+          <button type="button" className="btn-nav-close" onClick={onClose} aria-label="Close pair list">
+            ×
+          </button>
+        </div>
       </div>
       <ul className="pair-list">
         {pairs.map((pair) => {

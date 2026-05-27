@@ -21,9 +21,9 @@ export function PriceChart({ bars, profile, symbol, entryLow, entryHigh, tp, sl 
   }
 
   const data = bars.bars
-  const W = 720
+  const W = 640
   const H = 220
-  const pad = { t: 12, r: 12, b: 24, l: 56 }
+  const pad = { t: 12, r: 44, b: 24, l: 48 }
   const iw = W - pad.l - pad.r
   const ih = H - pad.t - pad.b
 
@@ -60,7 +60,7 @@ export function PriceChart({ bars, profile, symbol, entryLow, entryHigh, tp, sl 
         strokeDasharray={dash}
         opacity={0.8}
       />
-      <text x={W - pad.r + 4} y={yScale(price) + 3} fill={color} fontSize={9}>{label}</text>
+      <text x={W - pad.r + 2} y={yScale(price) + 3} fill={color} fontSize={9} textAnchor="start">{label}</text>
     </g>
   )
 
@@ -71,7 +71,8 @@ export function PriceChart({ bars, profile, symbol, entryLow, entryHigh, tp, sl 
         <span className="panel-tag">{data.length} bars</span>
       </div>
 
-      <svg viewBox={`0 0 ${W + 40} ${H}`} className="price-chart">
+      <div className="chart-container">
+        <svg viewBox={`0 0 ${W} ${H}`} className="price-chart" preserveAspectRatio="xMidYMid meet">
         {[0, 0.25, 0.5, 0.75, 1].map((pct) => {
           const v = yMin + (yMax - yMin) * (1 - pct)
           const y = pad.t + ih * pct
@@ -111,7 +112,8 @@ export function PriceChart({ bars, profile, symbol, entryLow, entryHigh, tp, sl 
             </g>
           )
         })}
-      </svg>
+        </svg>
+      </div>
     </section>
   )
 }

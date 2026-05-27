@@ -32,6 +32,7 @@ export default function App() {
   const [selected, setSelected] = useState(DEFAULT_SYMBOL)
   const [liveEnabled, setLiveEnabled] = useState(true)
   const [tab, setTab] = useState<Tab>('desk')
+  const [navOpen, setNavOpen] = useState(false)
 
   const { status: backend, check: checkBackend } = useBackendStatus()
   const { health, refresh: refreshHealth } = useHealth()
@@ -45,6 +46,19 @@ export default function App() {
       .catch(() => setPairs([]))
   }, [])
 
+  useEffect(() => {
+    if (!navOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNavOpen(false)
+    }
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.body.style.overflow = ''
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [navOpen])
+
   const handleRefresh = useCallback(() => {
     checkBackend()
     refreshHealth()
@@ -55,6 +69,7 @@ export default function App() {
   const handleSelectPair = (symbol: string) => {
     setSelected(symbol)
     setTab('pair')
+    setNavOpen(false)
   }
 
   const profile = data.profile ?? data.forecast?.volume_profile ?? null
@@ -67,6 +82,7 @@ export default function App() {
         selectedSymbol={selected}
         liveConnected={connected}
         onRefresh={handleRefresh}
+        onOpenNav={() => setNavOpen(true)}
       />
 
       {!backend.connected && (
@@ -92,24 +108,37 @@ export default function App() {
 
       <SessionClock sessions={desk.sessions} />
 
-      <nav className="tab-nav">
+      <nav className="tab-nav" aria-label="Main sections">
         <button type="button" className={tab === 'desk' ? 'active' : ''} onClick={() => setTab('desk')}>
-          Desk Overview
+          <span className="show-wide">Desk Overview</span>
+          <span className="show-compact">Desk</span>
         </button>
         <button type="button" className={tab === 'pair' ? 'active' : ''} onClick={() => setTab('pair')}>
-          Pair Detail — {selected}
+          <span className="show-wide">Pair Detail — {selected}</span>
+          <span className="show-compact">{selected}</span>
         </button>
         <button type="button" className={tab === 'macro' ? 'active' : ''} onClick={() => setTab('macro')}>
-          Macro & Flow
+          <span className="show-wide">Macro & Flow</span>
+          <span className="show-compact">Macro</span>
         </button>
       </nav>
 
-      <div className="layout">
+      <div className={`layout layout-${tab}`}>
+        <button
+          type="button"
+          className={`pair-nav-backdrop ${navOpen ? 'open' : ''}`}
+          aria-label="Close pair list"
+          onClick={() => setNavOpen(false)}
+          tabIndex={navOpen ? 0 : -1}
+        />
+
         <PairSelector
           pairs={pairs}
           scrapers={health?.scrapers ?? []}
           selected={selected}
+          open={navOpen}
           onSelect={handleSelectPair}
+          onClose={() => setNavOpen(false)}
         />
 
         <main className="main-column">

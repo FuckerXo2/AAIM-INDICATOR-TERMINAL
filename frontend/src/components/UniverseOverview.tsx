@@ -35,7 +35,56 @@ export function UniverseOverview({ overview, selected, onSelect, loading }: Univ
         </div>
       </div>
 
-      <div className="table-wrap">
+      <div className="universe-cards">
+        {overview.pairs.map((row) => (
+          <button
+            type="button"
+            key={row.symbol}
+            className={`universe-card ${row.symbol === selected ? 'selected' : ''} ${row.actionable ? 'actionable' : ''}`}
+            onClick={() => onSelect(row.symbol)}
+          >
+            <div className="universe-card-top">
+              <div>
+                <strong className="mono">{row.symbol}</strong>
+                <small>{row.asset_class}</small>
+              </div>
+              <ScenarioBadge scenario={row.scenario} />
+            </div>
+            <div className="universe-card-metrics">
+              <div>
+                <span>Price</span>
+                <strong className="mono">{fmtPrice(row.price, row.symbol)}</strong>
+              </div>
+              <div>
+                <span>Chg</span>
+                <strong className={row.change_pct >= 0 ? 'text-ok' : 'text-bad'}>
+                  {row.change_pct >= 0 ? '+' : ''}{row.change_pct.toFixed(3)}%
+                </strong>
+              </div>
+              <div>
+                <span>Entropy</span>
+                <strong className={row.clearance ? 'text-ok' : 'text-bad'}>{row.entropy_bits.toFixed(2)}</strong>
+              </div>
+              <div>
+                <span>Size</span>
+                <strong>{Math.round(row.position_size_multiplier * 100)}%</strong>
+              </div>
+            </div>
+            <div className="universe-card-footer">
+              <span>{row.regime} · {row.garch_regime}</span>
+              {row.actionable ? (
+                <span className="status-pill pill-ok">Go</span>
+              ) : row.clearance ? (
+                <span className="status-pill pill-warn">Wait</span>
+              ) : (
+                <span className="status-pill pill-bad">Block</span>
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="table-wrap universe-table-wrap">
         <table className="universe-table">
           <thead>
             <tr>
