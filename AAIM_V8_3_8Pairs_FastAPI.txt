@@ -1,0 +1,339 @@
+**AAIM INDICATOR TERMINAL V8.3**
+
+Aggregated Volume-Weighted Auction Market Tracer  |  Forecasting Model
+
+8-Pair Core Universe  •  FastAPI Backend  •  Scraper-Native Data Layer  •  MAY 2026
+
+# **1. Targeted Pair Universe**
+
+The V8.3 terminal narrows focus to eight high-liquidity pairs across the EUR, GBP, AUD currency families. All downstream modules — volume profiling, pivot mathematics, entropy filters, and execution Gantt — are parameterised exclusively for this universe.
+
+| **Pair** | **Asset Class** | **Primary ECN Venue** | **CME Futures Proxy** | **Macro Anchor** |
+| --- | --- | --- | --- | --- |
+| EURUSD | Major | EBS Primary Pool | 6E=F (Euro FX) | DE02Y vs US02Y spread |
+| GBPUSD | Major | Refinitiv Matching | 6B=F (GBP) | GB02Y vs US02Y spread |
+| GBPJPY | Minor | Refinitiv Matching | 6B=F (GBP) | FTSE 100 equity proxy |
+| EURGBP | Minor | Refinitiv Matching | 6E=F (Euro FX) | DE02Y vs GB02Y spread |
+| AUDUSD | Major | Refinitiv Matching | 6A=F (AUD) | Iron Ore Spot Index |
+| AUDCHF | Minor | EBS / Refinitiv | 6A=F (AUD) | AUD risk + CHF haven composite |
+| GBPCHF | Minor | Refinitiv Matching | 6B=F (GBP) | GB02Y vs CH02Y spread |
+| EURCHF | Minor | EBS Primary Pool | 6E=F (Euro FX) | DE02Y vs CH02Y spread |
+
+# **2. System Architecture Overview**
+
+The terminal is a FastAPI monolith with isolated async scraper workers. No third-party data APIs are used. All OHLCV, futures volume, and macro yield data is sourced directly from public exchange endpoints and financial data websites via HTTP scraping and WebSocket taps.
+
+## **2.1 High-Level Component Map**
+
+| **Layer** | **Component** | **Technology** |
+| --- | --- | --- |
+| Ingestion | Scraper workers (per pair) | Python asyncio + httpx + BeautifulSoup/Playwright |
+| Transport | Internal message bus | FastAPI BackgroundTasks / asyncio.Queue |
+| Compute | AAIM engine (GARCH, MP filter, pivots, volume profile) | NumPy / SciPy / statsmodels / arch |
+| API | REST endpoints + WebSocket stream | FastAPI + uvicorn |
+| Storage | OHLCV cache + state store | Redis (in-memory) + SQLite (persistence) |
+| Output | Execution dashboard JSON / Gantt payload | FastAPI JSON response |
+
+## **2.2 FastAPI Application Structure**
+
+aaim_terminal/
+
+  main.py                  # FastAPI app entry point
+
+  routers/
+
+    pairs.py               # GET /pairs/{symbol}/forecast
+
+    stream.py              # WebSocket /ws/live/{symbol}
+
+    health.py              # GET /health
+
+  scrapers/
+
+    ohlcv_scraper.py       # 15m OHLCV from Investing.com / TradingView
+
+    futures_scraper.py     # CME volume proxy from Barchart
+
+    yield_scraper.py       # Sovereign 2Y yields from investing.com/rates
+
+    cftc_scraper.py        # CFTC COT report from cftc.gov
+
+  engine/
+
+    volume_profile.py      # POC / VAH / VAL / LVN calculator
+
+    pivots.py              # Standard / Camarilla / Fibonacci pivots
+
+    garch_model.py         # GARCH(1,1) conditional variance
+
+    mp_filter.py           # Temporal Marchenko-Pastur noise firewall
+
+    basilica.py            # SARIMAX drift + Monte Carlo simulation
+
+    entropy_sentinel.py    # Shannon entropy risk filter
+
+  config.py               # Pair registry, session windows (WAT)
+
+  models.py               # Pydantic schemas
+
+# **3. Scraper-Native Data Layer**
+
+All market data is acquired through targeted HTTP scrapers and DOM parsers. The scraper layer is structured as async workers running on configurable refresh intervals inside FastAPI BackgroundTasks. Each scraper has a 200ms timeout fallback to prevent a single source stall from blocking the engine.
+
+## **3.1 OHLCV Scraper (15-Minute Bars)**
+
+Source: Investing.com historical data pages (no login required for 15m intraday).
+
+- Library stack: httpx (async HTTP), BeautifulSoup4 (HTML parse), pandas (normalisation)
+
+- Pairs mapped to Investing.com instrument slugs (e.g. eur-usd, gbp-usd, gbp-jpy)
+
+- Refresh interval: 60 seconds per pair, staggered 7.5s apart to avoid rate limiting
+
+- Fallback: Playwright headless scrape of TradingView chart export if primary fails
+
+## **3.2 CME Futures Volume Scraper**
+
+Source: Barchart.com futures quotes pages (free public tier).
+
+- Scrapes 6E=F, 6B=F, 6A=F volume and open interest from Barchart futures overview page
+
+- Volume data merged with spot OHLCV via timestamp join to produce volume-weighted bars
+
+- Refresh interval: 5 minutes (CME volume updates on settlement blocks)
+
+## **3.3 Sovereign Yield Scraper (Macro Anchor)**
+
+Source: Investing.com bonds section — 2-Year government bond yield pages.
+
+| **Pair** | **Yield Spread Required** | **Investing.com Bond Pages** |
+| --- | --- | --- |
+| EURUSD | DE02Y − US02Y | germany-2-year-bond-yield / united-states-2-year-bond-yield |
+| GBPUSD | GB02Y − US02Y | uk-2-year-gilt-yield / united-states-2-year-bond-yield |
+| GBPJPY | GB02Y (FTSE proxy) | uk-2-year-gilt-yield + uk-100 index |
+| EURGBP | DE02Y − GB02Y | germany-2-year-bond-yield / uk-2-year-gilt-yield |
+| AUDUSD | Iron Ore proxy | RBA cash rate page + iron-ore |
+| AUDCHF | AU02Y − CH02Y | australia-2-year-bond / switzerland-2-year-bond |
+| GBPCHF | GB02Y − CH02Y | uk-2-year-gilt-yield / switzerland-2-year-bond |
+| EURCHF | DE02Y − CH02Y | germany-2-year-bond-yield / switzerland-2-year-bond |
+
+## **3.4 CFTC Positioning Scraper**
+
+Source: cftc.gov public Disaggregated Futures report (released every Friday 15:30 ET).
+
+- Direct HTTP GET to https://www.cftc.gov/dea/newcot/deahistfo.zip (free, no auth)
+
+- Unzip and parse CSV; filter rows by CFTC report code for each currency contract
+
+- Extract Leveraged Funds Net Long / Net Short for EUR (099741), GBP (096742), AUD (112741)
+
+- Refresh: weekly, auto-triggered by cron at 16:00 ET Friday
+
+## **3.5 Scraper Resilience Pattern**
+
+Every scraper follows this async fallback chain to prevent full pipeline stalls:
+
+async def fetch_ohlcv(symbol: str) -> pd.DataFrame:
+
+    try:
+
+        return await httpx_scrape_investing(symbol)   # primary
+
+    except asyncio.TimeoutError:
+
+        return await playwright_scrape_tradingview(symbol)  # fallback
+
+    except Exception:
+
+        return load_redis_cache(symbol)   # last-resort cached bars
+
+# **4. Volume Profile ****&**** Footprint Engine**
+
+The volume profile module processes the merged spot + CME futures volume bars into structural auction map coordinates: POC, VAH, VAL, and LVN. These coordinates are the gravitational anchors for all downstream pivot intersections and drift simulations.
+
+## **4.1 Core Metrics**
+
+| **Metric** | **Definition** | **Role in AAIM** |
+| --- | --- | --- |
+| POC (Point of Control) | Price level with highest traded volume in the window | Primary gravitational magnet; drift paths slow near POC |
+| VA (Value Area) | Price range containing 70% of total session volume | Defines balanced vs. imbalanced market context |
+| VAH / VAL | Upper and lower boundaries of the Value Area | Dynamic S/R; asymmetric volatility cone boundaries |
+| LVN (Low Volume Node) | Local volume trough — price moves through rapidly | Breakout acceleration zones; Fibonacci weight increases here |
+
+# **5. Pivot Mathematics**
+
+All pivot calculations are anchored to the previous New York Close (22:00 WAT) to keep levels static throughout the 24-hour market run. Pivots do not repaint intraday.
+
+## **5.1 Standard (Floor) Pivots**
+
+Best for: General S/R — most widely referenced by institutional desks.
+
+| **Level** | **Formula** |
+| --- | --- |
+| P (Pivot) | (High + Low + Close) / 3 |
+| R1 | (2 × P) − Low |
+| S1 | (2 × P) − High |
+| R2 | P + (High − Low) |
+| S2 | P − (High − Low) |
+| R3 | High + 2 × (P − Low) |
+| S3 | Low − 2 × (High − P) |
+
+## **5.2 Camarilla Pivots**
+
+Best for: Mean-reversion and scalping — tight levels closest to current price.
+
+| **Level** | **Formula** |
+| --- | --- |
+| R4 | Close + (High − Low) × (1.1 / 2) |
+| R3 | Close + (High − Low) × (1.1 / 4) |
+| R2 | Close + (High − Low) × (1.1 / 6) |
+| R1 | Close + (High − Low) × (1.1 / 12) |
+| S1 | Close − (High − Low) × (1.1 / 12) |
+| S2 | Close − (High − Low) × (1.1 / 6) |
+| S3 | Close − (High − Low) × (1.1 / 4) |
+| S4 | Close − (High − Low) × (1.1 / 2) |
+
+## **5.3 Fibonacci Pivots**
+
+Best for: Trending markets and pullback entries.
+
+| **Level** | **Formula** |
+| --- | --- |
+| P | (High + Low + Close) / 3 |
+| R1 | P + 0.382 × (High − Low) |
+| S1 | P − 0.382 × (High − Low) |
+| R2 | P + 0.618 × (High − Low) |
+| S2 | P − 0.618 × (High − Low) |
+| R3 | P + 1.000 × (High − Low) |
+| S3 | P − 1.000 × (High − Low) |
+
+# **6. Basilica Simulation Engine**
+
+The Basilica engine wraps SARIMAX linear drift and GARCH(1,1) volatility around the structural volume and pivot coordinates to produce a 24-hour probabilistic price path with explicit entry, TP, and SL parameters.
+
+## **6.1 Execution Scenario Logic**
+
+| **Condition** | **Scenario Label** | **Entry Range** | **TP Target** | **SL Placement** |
+| --- | --- | --- | --- | --- |
+| Price < POC | BULLISH_PULLBACK_SWEEP | min(VAL, Cam S3) → max(VAL, Cam S3) | POC | Entry low − 1.5 × ATR |
+| Price > POC | BEARISH_SUPPLY_REJECTION | min(VAH, Cam R3) → max(VAH, Cam R3) | POC | Entry high + 1.5 × ATR |
+
+## **6.2 Session Timing (WAT)**
+
+- 08:00 WAT — London Open: Primary institutional sweep window. Monitor Camarilla R3/S3 intersection with LVN for inflection entries.
+
+- 13:00 WAT — London/NY Overlap: Highest intraday volume. Re-evaluate POC gravity and entropy score before adding to open positions.
+
+- 21:00–22:00 WAT — NY Close: Lock previous day OHLC for next session pivot anchor.
+
+# **7. Temporal Marchenko-Pastur Noise Firewall**
+
+The MP filter applies Random Matrix Theory to the rolling autocorrelation structure of each pair’s 15-minute return series. Eigenvalues below the dynamic GARCH-adjusted threshold are zeroed out, stripping retail noise and false breakout signals before the data enters the Basilica engine.
+
+| **Parameter** | **Definition** | **Value** |
+| --- | --- | --- |
+| L (max_lags) | Temporal lag window — number of 15m steps in autocorrelation matrix | 24 bars (6 hours) |
+| γ (aspect ratio) | L / T where T = lookback window bars | 24 / 120 = 0.2 |
+| λ+ (noise ceiling) | σ²_GARCH × (1 + √γ)² × sensitivity | Dynamic — updates each bar |
+| Signal retention | Eigenvalues > λ+ passed to SYNAPSE XIII | Typically 2–5 of 24 components |
+
+**Dynamic threshold formula: λ+ = σ²_GARCH × (1 + √γ)²**
+
+During London Open and NY Overlap, the GARCH variance expands the noise ceiling automatically, preventing volatility spikes from being misread as structural trend shifts.
+
+# **8. Shannon Entropy Risk Sentinel**
+
+The entropy sentinel evaluates the HMM posterior probability vector at each bar and classifies the current regime confidence. It acts as the final gate before an execution signal is released to the dashboard.
+
+| **Entropy Score (Hₙ)** | **Classification** | **Action** |
+| --- | --- | --- |
+| Hₙ ≤ 0.40 bits | LOW_RISK — HIGH_CONVICTION_STABLE | Full position sizing permitted |
+| 0.40 < Hₙ ≤ 0.85 | MODERATE_RISK — REDUCED_SIZING_ZONE | Scale position to 50%; tighten SL |
+| Hₙ > 0.85 bits | HIGH_RISK — TRANSITION_AMBIGUITY_AVOID | Block execution; stand aside |
+
+# **9. Dynamic Entropy-Weighted Scoring System**
+
+Replaces the binary all-or-nothing pivot alignment rule with an ATR-driven weight system that adapts to market regime in real time.
+
+| **Regime** | **ATR Percentile** | **W_Standard** | **W_Camarilla** | **W_Fibonacci** | **W_Volume Profile** |
+| --- | --- | --- | --- | --- | --- |
+| Consolidation / Mean-Reversion | < 30th | 25% | 25% | 25% | 25% |
+| Normal Flow | 30th–80th | 20% | 20% | 30% | 30% |
+| Trend Expansion / High Volatility | > 80th | 5% | 0% | 45% | 50% |
+
+In Trend Expansion regime: weight shifts fully to Fibonacci extensions and Volume Profile LVNs. Camarilla mean-reversion is disabled to prevent execution paralysis during directional moves.
+
+# **10. GARCH Volatility State-Switching Overlay**
+
+Explicit three-state volatility regime classifier running on GARCH(1,1) conditional variance percentiles. Replaces reliance on implicit HMM state inference for regime transitions.
+
+| **State** | **GARCH Variance Percentile** | **Action** |
+| --- | --- | --- |
+| Low-Drag Consolidation | < 30th | Standard sizing; tight Camarilla entries |
+| Normal Flow | 30th – 80th | Default Basilica parameters apply |
+| High-Entropy Shock | > 80th | 50% position size haircut; widen SL past all pivot families; block new breakout entries |
+
+Circuit Breaker Rule: When GARCH conditional variance crosses above the 80th historical percentile (e.g. during a central bank announcement), the engine automatically applies the haircut without manual desk intervention.
+
+# **11. FastAPI Endpoint Reference**
+
+| **Method** | **Endpoint** | **Description** | **Response** |
+| --- | --- | --- | --- |
+| GET | /pairs/{symbol}/forecast | Full AAIM output for one of the 8 pairs | JSON: scenario, entry_range, tp, sl, entropy, regime |
+| GET | /pairs/{symbol}/pivots | Current session pivot levels (all 3 families) | JSON: standard, camarilla, fibonacci objects |
+| GET | /pairs/{symbol}/profile | Volume profile coordinates | JSON: POC, VAH, VAL, LVN |
+| GET | /pairs/{symbol}/entropy | Live Shannon entropy score | JSON: entropy_bits, classification, clearance |
+| WS | /ws/live/{symbol} | Streaming 15m bar updates + live forecast | JSON stream on each new bar close |
+| GET | /health | Service health and scraper status per pair | JSON: scraper status map |
+
+## **11.1 Sample Forecast Response (GBPUSD)**
+
+{
+
+  "symbol": "GBPUSD",
+
+  "timestamp_wat": "2026-05-26T09:15:00+01:00",
+
+  "scenario": "BULLISH_PULLBACK_SWEEP",
+
+  "entry_range": { "low": 1.27340, "high": 1.27490 },
+
+  "tp": 1.27820,
+
+  "sl": 1.27110,
+
+  "volume_profile": { "POC": 1.27820, "VAH": 1.28150, "VAL": 1.27200, "LVN": 1.27050 },
+
+  "entropy": { "bits": 0.312, "classification": "LOW_RISK_HIGH_CONVICTION_STABLE", "clearance": true },
+
+  "regime": "Normal Flow",
+
+  "mp_signals_retained": 3
+
+}
+
+# **12. Known Limitations ****&**** Mitigations**
+
+| **Shortcoming** | **Risk** | **Mitigation in V8.3** |
+| --- | --- | --- |
+| Pivot repainting | Camarilla levels shift mid-trade if rolling daily OHLC is used | Anchored to previous NY Close (22:00 WAT) — fully static intraday |
+| Scraper latency / source outage | Stale bars cause lagged entry brackets and slippage | 200ms async timeout + Redis last-known-good cache fallback |
+| Restrictive overlap trap | Engine outputs Stand Aside during high-momentum trend runs | Dynamic Entropy-Weighted Scoring degrades Camarilla weight to 0% in Trend Expansion regime |
+| HMM latent state lag | Delayed regime shift detection during shock events | GARCH State-Switching Overlay provides hard-coded circuit breaker independent of HMM |
+| AUDCHF volume proxy gap | No direct CME contract for CHF crosses; only 6A=F available | Proxy blend: 6A=F volume + 6S=F (Swiss Franc) volume weighted 60/40 by correlation rolling window |
+
+# **13. Desk Execution Workflow**
+
+- Health check — GET /health to verify all 8 scrapers are live and last bar age < 90 seconds.
+
+- Entropy gate — Run GET /pairs/{symbol}/entropy before entering. Reject HIGH_RISK state outright.
+
+- Regime check — Note GARCH state. If High-Entropy Shock, apply 50% size haircut automatically.
+
+- Forecast pull — GET /pairs/{symbol}/forecast. Read scenario, entry_range, tp, sl. Cross-check entry_range against volume profile VAH/VAL manually.
+
+- Session window — Prioritise executions at 08:00 WAT (London Open) and 13:00 WAT (NY Overlap). Avoid new entries within 10 minutes of a scheduled macro event flagged in the feed.
+
+- Exit management — Set TP at POC. In Trend Expansion regime, switch to trailing SL anchored at live VAH/VAL boundaries from the volume profile endpoint.
+
+AAIM Indicator Terminal V8.3  |  8-Pair Core Build  |  FastAPI + Scraper-Native  |  MAY 2026  |  CONFIDENTIAL
