@@ -19,9 +19,9 @@ _running = False
 
 async def refresh_pair_ohlcv(symbol: str) -> None:
     try:
-        bars = await fetch_ohlcv(symbol)
+        bars, source = await fetch_ohlcv(symbol)
         if bars is not None and not bars.empty:
-            await store.set_ohlcv(symbol, bars, source="live")
+            await store.set_ohlcv(symbol, bars, source=source)
         else:
             store.set_scraper_status(symbol, "ohlcv", "empty")
     except Exception as exc:

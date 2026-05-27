@@ -19,6 +19,7 @@ class PairConfig:
     macro_anchor: str
     investing_slug: str
     cftc_code: Optional[str] = None
+    investing_curr_id: Optional[int] = None
 
 
 PAIRS: dict[str, PairConfig] = {
@@ -30,6 +31,7 @@ PAIRS: dict[str, PairConfig] = {
         macro_anchor="DE02Y vs US02Y spread",
         investing_slug="eur-usd",
         cftc_code="099741",
+        investing_curr_id=1,
     ),
     "GBPUSD": PairConfig(
         symbol="GBPUSD",
@@ -39,6 +41,7 @@ PAIRS: dict[str, PairConfig] = {
         macro_anchor="GB02Y vs US02Y spread",
         investing_slug="gbp-usd",
         cftc_code="096742",
+        investing_curr_id=2,
     ),
     "GBPJPY": PairConfig(
         symbol="GBPJPY",
@@ -48,6 +51,7 @@ PAIRS: dict[str, PairConfig] = {
         macro_anchor="FTSE 100 equity proxy",
         investing_slug="gbp-jpy",
         cftc_code="096742",
+        investing_curr_id=7,
     ),
     "EURGBP": PairConfig(
         symbol="EURGBP",
@@ -57,6 +61,7 @@ PAIRS: dict[str, PairConfig] = {
         macro_anchor="DE02Y vs GB02Y spread",
         investing_slug="eur-gbp",
         cftc_code="099741",
+        investing_curr_id=6,
     ),
     "AUDUSD": PairConfig(
         symbol="AUDUSD",
@@ -66,6 +71,7 @@ PAIRS: dict[str, PairConfig] = {
         macro_anchor="Iron Ore Spot Index",
         investing_slug="aud-usd",
         cftc_code="112741",
+        investing_curr_id=5,
     ),
     "AUDCHF": PairConfig(
         symbol="AUDCHF",
@@ -74,6 +80,7 @@ PAIRS: dict[str, PairConfig] = {
         cme_futures_proxy="6A=F",
         macro_anchor="AUD risk + CHF haven composite",
         investing_slug="aud-chf",
+        investing_curr_id=48,
     ),
     "GBPCHF": PairConfig(
         symbol="GBPCHF",
@@ -82,6 +89,7 @@ PAIRS: dict[str, PairConfig] = {
         cme_futures_proxy="6B=F",
         macro_anchor="GB02Y vs CH02Y spread",
         investing_slug="gbp-chf",
+        investing_curr_id=12,
     ),
     "EURCHF": PairConfig(
         symbol="EURCHF",
@@ -90,6 +98,7 @@ PAIRS: dict[str, PairConfig] = {
         cme_futures_proxy="6E=F",
         macro_anchor="DE02Y vs CH02Y spread",
         investing_slug="eur-chf",
+        investing_curr_id=10,
     ),
 }
 
